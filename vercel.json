@@ -1,0 +1,10 @@
+{
+  "env": {
+    "POSTGRES_URL": "@postgres-url",
+    "GOOGLE_GENERATIVE_AI_API_KEY": "@gemini-api-key",
+    "TIKTOK_CLIENT_KEY": "@tiktok-client-key",
+    "TIKTOK_CLIENT_SECRET": "@tiktok-client-secret",
+    "TOKEN_ENCRYPTION_KEY": "@token-encryption-key",
+    "JWT_SECRET": "@jwt-secret"
+  }
+}
