@@ -67,3 +67,18 @@ export const creators = pgTable('creators', {
   usernameIdx: index('creators_username_idx').on(table.username),
   followersIdx: index('creators_followers_idx').on(table.followerCount),
 }));
+
+export const creatorDiscoveries = pgTable('creator_discoveries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  username: varchar('username', { length: 255 }).notNull(),
+  source: varchar('source', { length: 50 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  payload: jsonb('payload'),
+  attempts: integer('attempts').default(0),
+  lastAttemptAt: timestamp('last_attempt_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  usernameIdx: index('creator_discoveries_username_idx').on(table.username),
+  statusIdx: index('creator_discoveries_status_idx').on(table.status),
+}));
