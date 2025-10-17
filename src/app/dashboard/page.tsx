@@ -246,9 +246,9 @@ export default function DashboardPage() {
             </h1>
           </div>
           <div className="flex-1"></div>
-          <div className="text-sm text-muted-foreground">
+          {/* <div className="text-sm text-muted-foreground">
             Powered by Gemini 2.0 Flash
-          </div>
+          </div> */}
         </header>
 
         {/* Messages */}

@@ -6,7 +6,7 @@ import { eq, desc } from 'drizzle-orm';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { jobId: string } }
+  context: { params: Promise<{ jobId: string }> }
 ) {
   try {
     // Check authentication
@@ -15,7 +15,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const jobId = params.jobId;
+    const { jobId } = await context.params;
 
     // Get the specific discovery job
     const [job] = await db

@@ -17,6 +17,10 @@ export async function GET(req: NextRequest) {
     async start(controller) {
       // Function to send updates
       const sendUpdate = async () => {
+        if (req.signal.aborted) {
+          return;
+        }
+
         try {
           // Get recent pending/processing jobs
           const pendingJobs = await db
@@ -54,7 +58,9 @@ export async function GET(req: NextRequest) {
           const message = `data: ${JSON.stringify(data)}\n\n`;
           controller.enqueue(encoder.encode(message));
         } catch (error) {
-          console.error('Error in SSE stream:', error);
+          if (!req.signal.aborted) {
+            console.error('Error in SSE stream:', error);
+          }
         }
       };
 
