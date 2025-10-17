@@ -7,6 +7,7 @@ import { eq, desc, sql, gte, and, lte } from 'drizzle-orm';
 import { getSession } from '@/lib/auth';
 import { schemaManifest } from '@/lib/schema-manifest';
 import { prepareReadOnlyQuery } from '@/lib/sql-sanitizer';
+import { enqueueDiscoveryJob } from '@/lib/queues/discovery';
 
 export const maxDuration = 30;
 
@@ -240,6 +241,8 @@ ${schemaManifest}`,
             ? hashtags
             : ['tiktokshop', 'tiktokmademebuy', 'tiktokfinds'];
 
+          const limitValue = limit ?? 20;
+
           // Queue discovery tasks
           const tasks = targetHashtags.map(async (hashtag) => {
             const existing = await db
@@ -254,16 +257,52 @@ ${schemaManifest}`,
               .limit(1);
 
             if (existing.length === 0) {
-              await db.insert(creatorDiscoveries).values({
-                username: `discovery-${hashtag}-${Date.now()}`,
-                source: `hashtag:${hashtag}`,
-                status: 'pending',
-                payload: {
+              const [record] = await db
+                .insert(creatorDiscoveries)
+                .values({
+                  username: `discovery-${hashtag}-${Date.now()}`,
+                  source: `hashtag:${hashtag}`,
+                  status: 'pending',
+                  payload: {
+                    hashtag,
+                    limit: limitValue,
+                    requestedAt: new Date().toISOString(),
+                    requestedBy: userId,
+                    requestedFrom: 'chat',
+                  },
+                })
+                .returning({
+                  id: creatorDiscoveries.id,
+                  payload: creatorDiscoveries.payload,
+                });
+
+              if (record) {
+                const basePayload = (record.payload ?? {}) as Record<string, unknown>;
+                const jobId = await enqueueDiscoveryJob({
+                  discoveryId: record.id,
                   hashtag,
-                  limit,
-                  requestedAt: new Date().toISOString(),
-                },
-              });
+                  limit: limitValue,
+                  source: `hashtag:${hashtag}`,
+                  requestedBy: userId,
+                  metadata: {
+                    requestedFrom: 'chat',
+                  },
+                });
+
+                await db
+                  .update(creatorDiscoveries)
+                  .set({
+                    payload: {
+                      ...basePayload,
+                      queue: {
+                        jobId,
+                        enqueuedAt: new Date().toISOString(),
+                      },
+                    },
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(creatorDiscoveries.id, record.id));
+              }
             }
           });
 
@@ -273,7 +312,7 @@ ${schemaManifest}`,
             success: true,
             message: `Queued scraping jobs for ${targetHashtags.length} hashtags: ${targetHashtags.join(', ')}`,
             hashtags: targetHashtags,
-            limit,
+            limit: limitValue,
             note: 'The scraping will run in the background. Results will appear in the creators database once processing completes.',
           };
         },

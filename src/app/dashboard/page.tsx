@@ -70,14 +70,51 @@ export default function DashboardPage() {
     setSyncing(true);
     try {
       const res = await fetch("/api/sync", { method: "POST" });
-      if (res.ok) {
-        alert("Synced successfully! Your latest data has been updated.");
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        alert("✅ Synced successfully! Your latest data has been updated.");
+      } else if (data.errorCode === 'TOKEN_EXPIRED') {
+        alert("🔐 Your TikTok session has expired. Let's re-authenticate!");
+        const authWindow = window.open(
+          "/auth/tiktok",
+          "tiktok_auth",
+          "width=500,height=700,left=500,top=300"
+        );
+
+        if (authWindow) {
+          const checkInterval = setInterval(() => {
+            if (authWindow.closed) {
+              clearInterval(checkInterval);
+              setTimeout(() => window.location.reload(), 1000);
+            }
+          }, 1000);
+        }
+      } else if (data.errorCode === 'USER_NOT_AUTHENTICATED') {
+        alert("⚠️ Authentication required. Redirecting to login...");
+        window.location.href = "/";
+      } else if (data.error?.includes('refresh failed')) {
+        alert("🔐 Token refresh failed. Let's re-authenticate!");
+        const authWindow = window.open(
+          "/auth/tiktok",
+          "tiktok_auth",
+          "width=500,height=700,left=500,top=300"
+        );
+
+        if (authWindow) {
+          const checkInterval = setInterval(() => {
+            if (authWindow.closed) {
+              clearInterval(checkInterval);
+              setTimeout(() => window.location.reload(), 1000);
+            }
+          }, 1000);
+        }
       } else {
-        alert("Failed to sync data. Please try again.");
+        alert("❌ " + (data.error || "Failed to sync data. Please try again."));
       }
     } catch (error) {
       console.error("Sync error:", error);
-      alert("Failed to sync data. Please try again.");
+      alert("❌ Failed to sync data. Please try again.");
     } finally {
       setSyncing(false);
     }

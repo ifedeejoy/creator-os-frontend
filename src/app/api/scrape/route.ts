@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { db } from '@/db';
 import { creatorDiscoveries } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
+import { enqueueDiscoveryJob } from '@/lib/queues/discovery';
 
 export async function POST(req: NextRequest) {
   try {
@@ -43,17 +44,51 @@ export async function POST(req: NextRequest) {
         .limit(1);
 
       if (existing.length === 0) {
-        // Create a new discovery task
-        await db.insert(creatorDiscoveries).values({
-          username: `discovery-${hashtag}-${Date.now()}`,
-          source: `hashtag:${hashtag}`,
-          status: 'pending',
-          payload: {
+        const [record] = await db
+          .insert(creatorDiscoveries)
+          .values({
+            username: `discovery-${hashtag}-${Date.now()}`,
+            source: `hashtag:${hashtag}`,
+            status: 'pending',
+            payload: {
+              hashtag,
+              limit,
+              requestedAt: new Date().toISOString(),
+              requestedBy: session.userId,
+            },
+          })
+          .returning({
+            id: creatorDiscoveries.id,
+            payload: creatorDiscoveries.payload,
+          });
+
+        if (record) {
+          const basePayload = (record.payload ?? {}) as Record<string, unknown>;
+          const jobId = await enqueueDiscoveryJob({
+            discoveryId: record.id,
             hashtag,
             limit,
-            requestedAt: new Date().toISOString(),
-          },
-        });
+            source: `hashtag:${hashtag}`,
+            requestedBy: session.userId,
+            metadata: {
+              requestedFrom: 'dashboard',
+            },
+          });
+
+          await db
+            .update(creatorDiscoveries)
+            .set({
+              payload: {
+                ...basePayload,
+                queue: {
+                  jobId,
+                  enqueuedAt: new Date().toISOString(),
+                },
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(creatorDiscoveries.id, record.id));
+        }
       }
     });
 

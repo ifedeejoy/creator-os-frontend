@@ -41,22 +41,47 @@ export class TikTokClient {
     return response.data.data.user;
   }
 
-  async getUserVideos(maxCount = 20) {
-    const response = await axios.post(
-      `${TIKTOK_API_BASE}/video/list/`,
-      {
-        max_count: maxCount,
-        fields: 'id,title,view_count,like_count,comment_count,share_count,create_time',
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${this.accessToken}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
+  async getUserVideos(totalDesired = 100) {
+    const collected: any[] = [];
+    let cursor: string | undefined = undefined;
+    const fields = 'id,create_time,cover_image_url,share_url,video_description,duration,height,width,title,embed_html,embed_link,like_count,comment_count,share_count,view_count';
 
-    return response.data.data.videos;
+    // TikTok caps max_count at 20 per page; paginate until we reach totalDesired or run out
+    try {
+      while (collected.length < totalDesired) {
+        const remaining = totalDesired - collected.length;
+        const pageSize = Math.min(20, Math.max(1, remaining));
+
+        const body: Record<string, any> = { max_count: pageSize, fields };
+        if (cursor) body.cursor = cursor;
+
+        const response = await axios.post(
+          `${TIKTOK_API_BASE}/video/list/`,
+          body,
+          {
+            headers: {
+              Authorization: `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        const data = response?.data?.data;
+        const videos = data?.videos ?? [];
+        collected.push(...videos);
+
+        if (!data?.has_more || !data?.cursor) {
+          break;
+        }
+        cursor = data.cursor;
+      }
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const tiktokError = err?.response?.data ?? err?.message;
+      throw new Error(`TikTok video.list failed (${status ?? 'no-status'}): ${JSON.stringify(tiktokError)}`);
+    }
+
+    return collected;
   }
 }
 
@@ -158,17 +183,19 @@ export async function syncUserData(userId: string) {
     .where(eq(users.id, userId));
 
   // Fetch and store videos
-  const userVideos = await client.getUserVideos();
+  const userVideos = await client.getUserVideos(100);
 
   for (const video of userVideos) {
-    const engagementRate = ((video.like_count + video.comment_count + video.share_count) / video.view_count * 100).toFixed(2);
+    const totalInteractions = (video.like_count ?? 0) + (video.comment_count ?? 0) + (video.share_count ?? 0);
+    const views = Math.max(0, video.view_count ?? 0);
+    const engagementRate = views > 0 ? ((totalInteractions / views) * 100).toFixed(2) : '0.00';
 
     await db
       .insert(videos)
       .values({
         userId,
         tiktokVideoId: video.id,
-        description: video.title,
+        description: video.video_description || video.title,
         viewCount: video.view_count,
         likeCount: video.like_count,
         commentCount: video.comment_count,
