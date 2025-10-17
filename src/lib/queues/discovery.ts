@@ -17,9 +17,15 @@ let discoveryQueue: QueueType<DiscoveryJobData> | null = null;
 
 export function getDiscoveryQueue(): QueueType<DiscoveryJobData> {
   if (!discoveryQueue) {
+    console.log('🔌 [Frontend] Creating new BullMQ Queue instance for:', DISCOVERY_QUEUE_NAME);
     discoveryQueue = new Queue<DiscoveryJobData>(DISCOVERY_QUEUE_NAME, {
       connection: getRedisConnectionOptions(),
       defaultJobOptions: getDefaultJobOptions(),
+    });
+
+    // Add error handlers for better debugging
+    discoveryQueue.on('error', (error) => {
+      console.error('❌ [Frontend Queue Error]:', error);
     });
   }
 
@@ -30,15 +36,23 @@ export async function enqueueDiscoveryJob(
   data: DiscoveryJobData,
   options?: JobsOptions,
 ): Promise<string> {
-  const queue = getDiscoveryQueue();
-  const job = await queue.add('hashtag-discovery', data, options);
-  const jobId = job.id;
+  try {
+    const queue = getDiscoveryQueue();
+    console.log('📤 [Frontend] Enqueuing discovery job:', { hashtag: data.hashtag, discoveryId: data.discoveryId });
 
-  if (!jobId) {
-    throw new Error('Failed to determine queue job id');
+    const job = await queue.add('hashtag-discovery', data, options);
+    const jobId = job.id;
+
+    if (!jobId) {
+      throw new Error('Failed to determine queue job id');
+    }
+
+    console.log('✅ [Frontend] Job enqueued successfully:', jobId);
+    return jobId;
+  } catch (error) {
+    console.error('❌ [Frontend] Failed to enqueue job:', error);
+    throw error;
   }
-
-  return jobId;
 }
 
 function getDefaultJobOptions(): JobsOptions {

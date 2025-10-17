@@ -3,7 +3,6 @@ import { getSession } from '@/lib/auth';
 import { db } from '@/db';
 import { creatorDiscoveries } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
-import { enqueueDiscoveryJob } from '@/lib/queues/discovery';
 
 export async function POST(req: NextRequest) {
   try {
@@ -64,16 +63,30 @@ export async function POST(req: NextRequest) {
 
         if (record) {
           const basePayload = (record.payload ?? {}) as Record<string, unknown>;
-          const jobId = await enqueueDiscoveryJob({
-            discoveryId: record.id,
-            hashtag,
-            limit,
-            source: `hashtag:${hashtag}`,
-            requestedBy: session.userId,
-            metadata: {
-              requestedFrom: 'dashboard',
-            },
+
+          // Call backend API to enqueue job (backend handles Redis/BullMQ)
+          const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+          const response = await fetch(`${backendUrl}/api/discovery`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              discoveryId: record.id,
+              hashtag,
+              limit,
+              requestedBy: session.userId,
+              metadata: {
+                requestedFrom: 'dashboard',
+              },
+            }),
           });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(`Backend API error: ${error.error || 'Unknown error'}`);
+          }
+
+          const result = await response.json();
+          const jobId = result.jobId;
 
           await db
             .update(creatorDiscoveries)
